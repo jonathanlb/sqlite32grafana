@@ -6,27 +6,12 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
-
-type DataPoint struct {
-	Time  int64
-	Value float64
-}
-
-type TagKey struct {
-	Type string
-	Text string
-}
-
-type TimeSeriesManager interface {
-	GetTimeSeries(target string, from string, to string, dest *map[string][]DataPoint) error
-	GetTagKeys(tableName string, dest *[]TagKey) error
-	GetTagValues(tableName string, key string, dest *[]string) error
-}
 
 type sqliteTimeSeriesManager struct {
 	db     *sql.DB
@@ -50,16 +35,18 @@ func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, from string, t
 	query := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s >= ? AND %s < ? ORDER BY %s",
 		colBuilder.String(), tableName, timeColumn, timeColumn, timeColumn)
-	log.Println(query)
+	log.Printf("%s [%s, %s)", query, from, to)
 
 	rows, err := this.db.Query(query, from, to)
 	if err != nil {
 		return err
 	}
+	rowCount := 0
 	result := make(map[string][]DataPoint)
 	var values []interface{}
 	tag := valueColumn
 	for rows.Next() {
+		rowCount++
 		if values == nil {
 			values, err = getScanDest(rows)
 			if err != nil {
@@ -71,9 +58,9 @@ func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, from string, t
 			return errors.New(fmt.Sprintf("Cannot scan row: %v", err))
 		}
 
-		timeMillis, ok := values[0].(*int64) // XXX could be string date
+		timeMillis, ok := values[0].(*int64)
 		if !ok {
-			ts, err := time.Parse(time.RFC3339, *values[0].(*string))
+			ts, err := parseTime(*values[0].(*string))
 			if err != nil {
 				return errors.New(fmt.Sprintf("Cannot parse time: %v", err))
 			}
@@ -98,6 +85,7 @@ func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, from string, t
 		result[tag] = append(result[tag], newPoint)
 	}
 	*dest = result
+	log.Printf("read %d rows", rowCount)
 	return nil
 }
 
@@ -137,7 +125,6 @@ func getScanDest(rows *sql.Rows) ([]interface{}, error) {
 
 func (this *sqliteTimeSeriesManager) getSchema(tableName string, dest *[]TagKey) error {
 	query := fmt.Sprintf("PRAGMA table_info(%s)", tableName)
-	log.Printf("get Schema %s", query)
 	schema, err := this.db.Query(query)
 	if err != nil {
 		return err
@@ -184,6 +171,15 @@ func (this *sqliteTimeSeriesManager) target2tokens(target string) (string, strin
 func newFromDb(db *sql.DB, tables []string) TimeSeriesManager {
 	tableMap := NewSet(tables...)
 	return &sqliteTimeSeriesManager{db: db, tables: tableMap}
+}
+
+var yyyymmdd = regexp.MustCompile(`^[0-9]{2,4}[/\- ][0-9]{1,2}[/\- ][0-9]{1,2}$`)
+
+func parseTime(timeStr string) (time.Time, error) {
+	if yyyymmdd.MatchString(timeStr) {
+		return time.Parse(time.RFC3339, timeStr+"T0:00:00Z")
+	}
+	return time.Parse(time.RFC3339, timeStr)
 }
 
 func sql2grafanaType(sqlType string) string {

@@ -11,7 +11,7 @@ import (
 )
 
 func Test_CreateInMemory(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory")
+	db, _ := sql.Open("sqlite3", ":memory:")
 	newFromDb(db, []string{})
 }
 
@@ -93,7 +93,7 @@ func Test_GetTimeSeriesWithDatetimeIndex(t *testing.T) {
 }
 
 func Test_GetTimeSeriesFailsOnMissingTable(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory")
+	db, _ := sql.Open("sqlite3", ":memory:")
 	tsm := newFromDb(db, []string{})
 	var ts map[string][]DataPoint
 	err := tsm.GetTimeSeries("tsTab x", "0", "10", &ts)
@@ -171,29 +171,25 @@ func createDbWithTable(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatal("Cannot create in-memory sqlite DB")
 	}
-	if _, err := db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)"); err != nil {
-		t.Fatalf("Cannot create table tsTab: %v", err)
+
+	queries := []string{
+		"CREATE TABLE tsTab (x INT, tag TEXT, t INT)",
+		"CREATE INDEX idx_tsTab_t ON tsTab(t)",
+		"INSERT INTO tsTab (t, x, tag) VALUES (1, 100, 'a')",
+		"INSERT INTO tsTab (t, x, tag) VALUES (2, 200, 'b')",
+		"INSERT INTO tsTab (t, x, tag) VALUES (3, 300, 'a')",
+		"INSERT INTO tsTab (t, x, tag) VALUES (4, 400, 'b')",
 	}
-	if _, err := db.Exec("CREATE INDEX idx_tsTab_t ON tsTab(t)"); err != nil {
-		t.Fatalf("Cannot create index on idx_tsTab_t: %v", err)
-	}
-	if _, err := db.Exec("INSERT INTO tsTab (t, x, tag) VALUES (1, 100, 'a')"); err != nil {
-		t.Fatalf("Cannot create insert into tsTab_t: %v", err)
-	}
-	if _, err := db.Exec("INSERT INTO tsTab (t, x, tag) VALUES (2, 200, 'b')"); err != nil {
-		t.Fatalf("Cannot create insert into tsTab_t: %v", err)
-	}
-	if _, err := db.Exec("INSERT INTO tsTab (t, x, tag) VALUES (3, 300, 'a')"); err != nil {
-		t.Fatalf("Cannot create insert into tsTab_t: %v", err)
-	}
-	if _, err := db.Exec("INSERT INTO tsTab (t, x, tag) VALUES (4, 400, 'b')"); err != nil {
-		t.Fatalf("Cannot create insert into tsTab_t: %v", err)
+	for _, q := range queries {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf(`cannot issue query "%s" for test: %v`, q, err)
+		}
 	}
 	return db
 }
 
 func tempFileName(t *testing.T) string {
-	f, err := ioutil.TempFile("", "sqlite32grafana-test-")
+	f, err := ioutil.TempFile("", "sqlite32grafana-timeseries-test-")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -8,7 +8,7 @@ import (
 )
 
 func Test_GetTagKeysFailsOnInvalidTableName(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory")
+  db, _ := sql.Open("sqlite3", ":memory:")
 	tsm := newFromDb(db, []string{})
 	var keys []TagKey
 	if err := tsm.GetTagKeys("nonExistentTable", &keys); err == nil {
@@ -17,7 +17,7 @@ func Test_GetTagKeysFailsOnInvalidTableName(t *testing.T) {
 }
 
 func Test_GetTagKeys(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory")
+  db, _ := sql.Open("sqlite3", ":memory:")
 	db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)")
 	tsm := newFromDb(db, []string{"tsTab"})
 	var keys []TagKey
@@ -31,7 +31,7 @@ func Test_GetTagKeys(t *testing.T) {
 }
 
 func Test_GetTagKeysRaw(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory")
+  db, _ := sql.Open("sqlite3", ":memory:")
 	db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)")
 	tsm := newFromDb(db, []string{"tsTab"})
 	var keys []TagKey
