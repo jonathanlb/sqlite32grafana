@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"database/sql"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"github.com/gofiber/fiber"
 	"github.com/jonathanlb/sqlite32grafana/sqlite3"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/pkg/errors"
 )
 
 func check200(t *testing.T, testName string, resp *http.Response, err error) {
@@ -22,32 +22,32 @@ func check200(t *testing.T, testName string, resp *http.Response, err error) {
 func checkBody(t *testing.T, testName string, expected string, resp *http.Response) {
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatalf(`unexpected error reading %s body: "%v"`, testName, err)
+		t.Fatalf("%+v", errors.Errorf(`unexpected error reading %s body: "%v"`, testName, err))
 	}
 	strResp := string(body)
 	if strResp != expected {
-		t.Fatalf(`unexpected %s response: "%s", expected "%s"`, testName, strResp, expected)
+		t.Fatalf("%+v", errors.Errorf(`unexpected %s response: "%s", expected "%s"`, testName, strResp, expected))
 	}
 }
 
 func checkStatus(t *testing.T, testName string, expectStatus int, resp *http.Response, err error) {
 	if err != nil {
-		t.Fatalf(`unexpected %s error: '%v'`, testName, err)
+		t.Fatalf("%+v", errors.Errorf(`unexpected %s error: '%v'`, testName, err))
 	}
 	if resp.StatusCode != expectStatus {
 		body, _ := ioutil.ReadAll(resp.Body)
-		t.Fatalf(`unexpected %s code: %d, expected %d ("%s")`, testName, resp.StatusCode, expectStatus, body)
+		t.Fatalf("%+v", errors.Errorf(`unexpected %s code: %d, expected %d ("%s")`, testName, resp.StatusCode, expectStatus, body))
 	}
 }
 
 func createTimeSeriesManager(dbFileName string) sqlite3.TimeSeriesManager {
 	db, err := sql.Open("sqlite3", dbFileName)
 	if err != nil {
-		log.Fatalf("cannot open sqlite at %s: %v", dbFileName, err)
+		sugar.Fatalf("cannot open sqlite at %s: %v", dbFileName, err)
 	}
 
 	queries := []string{
-		"CREATE TABLE series (x INT, tag TEXT, t INT)",
+		"CREATE TABLE series (x INT, tag TEXT, t DATETIME)",
 		"CREATE INDEX idx_series_t ON series(t)",
 		"INSERT INTO series (t, x, tag) VALUES ('2020-04-01', 100, 'a')",
 		"INSERT INTO series (t, x, tag) VALUES ('2020-04-02', 200, 'b')",
@@ -56,14 +56,14 @@ func createTimeSeriesManager(dbFileName string) sqlite3.TimeSeriesManager {
 	}
 	for _, q := range queries {
 		if _, err := db.Exec(q); err != nil {
-			log.Fatalf(`cannot execute sqlite query "%s": %v`, q, err)
+			sugar.Fatalf(`cannot execute sqlite query "%s": %v`, q, err)
 		}
 	}
 	db.Close()
 
 	tsm, err := sqlite3.New(dbFileName, []string{"series"})
 	if err != nil {
-		log.Fatalf(`cannot create time series manager: %v`, err)
+		sugar.Fatalf(`cannot create time series manager: %v`, err)
 	}
 	return tsm
 }

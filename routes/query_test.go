@@ -3,7 +3,6 @@ package routes
 import (
 	"encoding/json"
 	"io/ioutil"
-	"log"
 	"os"
 	"testing"
 
@@ -66,7 +65,7 @@ func Test_GetTimeseries(t *testing.T) {
 	if err := json.Unmarshal(body, &timeseries); err != nil {
 		t.Fatalf("failed to read timeseries response: %v", err)
 	}
-	log.Printf("response %+v", timeseries)
+	sugar.Debugf("response %+v", timeseries)
 	if len(timeseries) != 2 {
 		t.Fatalf("read %d series, expected 2", len(timeseries))
 	}

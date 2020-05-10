@@ -8,5 +8,5 @@ go run main <sqlite.db files>
 ## Query
 The target name parameter should be formed as follows
 ```
-table-file time-column value-column [key-column]*
+table time-column value-column [key-column]*
 ```
