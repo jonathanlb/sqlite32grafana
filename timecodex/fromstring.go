@@ -26,7 +26,7 @@ func StringToTime(dateTimeStr string) (time.Time, error) {
 	}
 
 	epochs, err := strconv.Atoi(dateTimeStr)
-	if err != nil {
+	if err == nil {
 		return NumberToTime(int64(epochs)), nil
 	}
 

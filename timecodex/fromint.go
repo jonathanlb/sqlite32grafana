@@ -7,6 +7,16 @@ import (
 var secondsThreshold int64 = 32000000000
 var nanoThreshold int64 = secondsThreshold * 1000
 
+func NumberToScalar(epoch int64) (int64, bool) {
+	if epoch < secondsThreshold && epoch >= -secondsThreshold {
+		return 1000, true
+	}
+	if epoch > nanoThreshold || epoch <= -nanoThreshold {
+		return 1000000, false
+	}
+	return 1, true
+}
+
 // Attempt to interpret an integral value as a timestamp.
 // - Absolute values less than 3.2e10 will be treated as epoch seconds, yielding
 // times about a millenia from the epoch.

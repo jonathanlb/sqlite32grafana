@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"strconv"
+
 	"strings"
 	"time"
 
+	"github.com/jonathanlb/sqlite32grafana/timecodex"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -40,16 +41,16 @@ func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, from string, t
 		colBuilder.WriteString(", ")
 		colBuilder.WriteString(i)
 	}
-	fromTime, err := this.getTime(tableName, timeColumn, from)
+	fromTime, err := this.formatUserTimeForQuery(tableName, timeColumn, from)
 	if err != nil {
 		return errors.Wrap(err, "get from time for timeseries")
 	}
-	toTime, err := this.getTime(tableName, timeColumn, to)
+	toTime, err := this.formatUserTimeForQuery(tableName, timeColumn, to)
 	if err != nil {
 		return errors.Wrap(err, "get to time for timeseries")
 	}
 
-	timeReader := this.getTimeReader(tableName, timeColumn) // XXX memoize?
+	timeReader := this.getTimeToMillis(tableName, timeColumn) // XXX memoize?
 	query := fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s >= ? AND %s < ? ORDER BY %s",
 		colBuilder.String(), tableName, timeColumn, timeColumn, timeColumn)
@@ -125,12 +126,33 @@ func dateTimeToMillis(input interface{}) (int64, error) {
 			errors.Errorf("cannot cast time column of type %v to *string", reflect.TypeOf(input))
 	}
 
-	ts, err := parseTime(*dateStr)
+	ts, err := timecodex.StringToTime(*dateStr)
 	if err != nil {
 		return 0, errors.Errorf("Cannot parse time: %v", err)
 	}
 	millis := int64(ts.UnixNano() / 100000)
 	return millis, nil
+}
+
+// Convert user-supplied time string to one comparable to the stated type
+// of the column.
+func (this *sqliteTimeSeriesManager) formatUserTimeForQuery(tableName string, timeColumn string, timeStr string) (interface{}, error) {
+	columnType := this.getColumnType(tableName, timeColumn)
+	switch strings.ToLower(columnType) {
+	case "int":
+		t, err := timecodex.StringToTime(timeStr)
+		if err != nil {
+			return nil, err
+		}
+		unitGuess := this.guessTimeMetric(tableName, timeColumn, t)
+		return unitGuess, nil
+	case "datetime":
+		return timeStr, nil
+	case "text":
+		return timeStr, nil
+	default:
+		return nil, errors.Errorf("unknown time type %s for time column %s in table %s", columnType, timeColumn, tableName)
+	}
 }
 
 func (this *sqliteTimeSeriesManager) getColumnType(tableName string, columnName string) string {
@@ -191,26 +213,13 @@ func (this *sqliteTimeSeriesManager) getSchema(tableName string, dest *[]TagKey)
 	return nil
 }
 
-// Convert user-supplied time string to one comparable to the stated type of the column
-func (this *sqliteTimeSeriesManager) getTime(tableName string, timeColumn string, timeStr string) (interface{}, error) {
+// Determine which function to use to read a time value from the table/column
+// and translate to epoch millis for Grafana.
+func (this *sqliteTimeSeriesManager) getTimeToMillis(tableName string, timeColumn string) func(input interface{}) (int64, error) {
 	columnType := this.getColumnType(tableName, timeColumn)
 	switch strings.ToLower(columnType) {
 	case "int":
-		return millisToMillis(timeStr)
-	case "datetime":
-		return timeStr, nil
-	case "text":
-		return timeStr, nil
-	default:
-		return nil, errors.Errorf("unknown time type %s for time column %s in table %s", columnType, timeColumn, tableName)
-	}
-}
-
-func (this *sqliteTimeSeriesManager) getTimeReader(tableName string, timeColumn string) func(input interface{}) (int64, error) {
-	columnType := this.getColumnType(tableName, timeColumn)
-	switch strings.ToLower(columnType) {
-	case "int":
-		return millisToMillis
+		return this.columnToMillis(tableName, timeColumn)
 	case "datetime":
 		return dateTimeToMillis
 	case "text":
@@ -221,22 +230,49 @@ func (this *sqliteTimeSeriesManager) getTimeReader(tableName string, timeColumn 
 	}
 }
 
-func millisToMillis(input interface{}) (int64, error) {
-	millis, ok := input.(*int64)
-	if ok {
-		return *millis, nil
+// Take a time value and guess a numeric value useable for the specified
+// timeColumn.
+func (this *sqliteTimeSeriesManager) guessTimeMetric(tableName string, timeColumn string, t time.Time) int64 {
+	scale, s := this.guessTimeScalar(tableName, timeColumn)
+	if s {
+		return t.Unix() * 1000 / scale
+	} else {
+		return t.Unix() * 1000 * scale
 	}
+}
 
-	timeStr, ok := input.(string)
-	if !ok {
-		return 0,
-			errors.Errorf("cannot cast time column of type %v to int64 or string", reflect.TypeOf(input))
+// Return a value to scale (multiply) numeric values from the table/column to
+// arrive at epoch millis.
+func (this *sqliteTimeSeriesManager) guessTimeScalar(tableName string, timeColumn string) (int64, bool) {
+	query := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT 1", timeColumn, tableName, timeColumn)
+	row := this.db.QueryRow(query)
+	var t int64
+	row.Scan(&t)
+	return timecodex.NumberToScalar(t)
+}
+
+// Build a function to translate numeric time values from the table/column
+// to epoch millis.
+func (this *sqliteTimeSeriesManager) columnToMillis(tableName string, timeColumn string) func(input interface{}) (int64, error) {
+	scale, s := this.guessTimeScalar(tableName, timeColumn)
+
+	if s {
+		return func(input interface{}) (int64, error) {
+			millis, ok := input.(*int64)
+			if ok {
+				return *millis * scale, nil
+			}
+			return 0, errors.Errorf("cannot cast %s %+v to millis", reflect.TypeOf(input), input)
+		}
+	} else {
+		return func(input interface{}) (int64, error) {
+			millis, ok := input.(*int64)
+			if ok {
+				return *millis / scale, nil
+			}
+			return 0, errors.Errorf("cannot cast %s %+v to millis", reflect.TypeOf(input), input)
+		}
 	}
-	t, err := parseTime(timeStr)
-	if err != nil {
-		return 0, err
-	}
-	return t.UnixNano() / 1000000, err
 }
 
 // Parse the target as "table timeColumn valueColumn [tagColumn]*"
@@ -271,28 +307,6 @@ func newFromDb(db *sql.DB, tables []string) TimeSeriesManager {
 
 var yyyymmdd = regexp.MustCompile(`^[0-9]{2,4}[/\- ][0-9]{1,2}[/\- ][0-9]{1,2}$`)
 var intStr = regexp.MustCompile(`^[0-9]+$`)
-
-func parseTime(timeStr string) (time.Time, error) {
-	result, err := time.Parse(time.RFC3339, timeStr)
-	if err == nil {
-		return result, err
-	}
-
-	if yyyymmdd.MatchString(timeStr) {
-		return time.Parse(time.RFC3339, timeStr+"T0:00:00Z")
-	}
-
-	if intStr.MatchString(timeStr) {
-		epochMillis, err := strconv.Atoi(timeStr)
-		if err == nil {
-			s := (int64)(epochMillis / 1000)
-			ns := (int64)((epochMillis % 1000) * 1000000)
-			t := time.Unix(s, ns)
-			return t, nil
-		}
-	}
-	return time.Unix(0, 0), errors.Errorf(`cannot parse datetime "%s"`, timeStr)
-}
 
 func sql2grafanaType(sqlType string) string {
 	switch strings.ToLower(sqlType) {
