@@ -7,43 +7,20 @@ import (
 	"github.com/jonathanlb/sqlite32grafana/sqlite3"
 )
 
-type QueryRangeRaw struct {
-	From string
-	To   string
-}
-
-type QueryRange struct {
-	From string
-	To   string
-	Raw  QueryRangeRaw
-}
-
-type QueryTarget struct {
-	Target string
-	RefId  string
-	Type   string
-}
-
-type QueryFilter struct {
-	Key      string
-	Operator string
-	Value    string
-}
-
 type QueryPayload struct {
-	Range         QueryRange
-	RangeRaw      QueryRangeRaw
+	Range         sqlite3.QueryRange
+	RangeRaw      sqlite3.QueryRangeRaw
 	Interval      string
 	IntervalMs    int32
-	Targets       []QueryTarget
-	AdhocFilters  []QueryFilter
+	Targets       []sqlite3.QueryTarget
+	AdhocFilters  []sqlite3.QueryFilter
 	Format        string
 	MaxDataPoints int32
 }
 
 type Timeseries struct {
-	Target     string
-	DataPoints [][]float64
+	Target     string      `json:"target"`
+	DataPoints [][]float64 `json:"datapoints"`
 }
 
 func InstallQuery(app *fiber.App, tsm sqlite3.TimeSeriesManager) {
@@ -51,6 +28,7 @@ func InstallQuery(app *fiber.App, tsm sqlite3.TimeSeriesManager) {
 		var query QueryPayload
 		body := []byte(c.Body())
 		err := json.Unmarshal(body, &query)
+		sugar.Debugw("route query", "err", err, "body", string(body), "query", query)
 		if err == nil {
 			err = validateQuery(&query)
 		}
@@ -60,22 +38,27 @@ func InstallQuery(app *fiber.App, tsm sqlite3.TimeSeriesManager) {
 			return
 		}
 
+		queryOpts := sqlite3.TimeSeriesQueryOpts{
+			Interval:      query.Interval,
+			MaxDataPoints: query.MaxDataPoints,
+			Filters:       query.AdhocFilters,
+		}
+
 		result := []Timeseries{}
-		from, to := query.Range.From, query.Range.To
 		for _, target := range query.Targets {
+			// XXX switch on target.Type
 			var series map[string][]sqlite3.DataPoint
-			if err := tsm.GetTimeSeries(target.Target, from, to, &series); err != nil {
+			if err := tsm.GetTimeSeries(target.Target, &query.Range, &queryOpts, &series); err != nil {
 				c.SendStatus(400)
 				c.SendString(err.Error())
 				return
-			}
-			for key, data := range series {
+			} // XXX it looks like response spec is one series per target?
+			for _, data := range series {
 				result = append(result, Timeseries{
-					Target:     key,
+					Target:     target.Target,
 					DataPoints: datapointsToArray(data),
 				})
 			}
-			// TODO: Filter and limit points
 		}
 
 		resultBytes, err := json.Marshal(result)
@@ -84,6 +67,7 @@ func InstallQuery(app *fiber.App, tsm sqlite3.TimeSeriesManager) {
 			c.SendString(err.Error())
 			return
 		}
+		c.Set("Content-Type", "application/json")
 		c.Send(resultBytes)
 		c.SendStatus(200)
 	})

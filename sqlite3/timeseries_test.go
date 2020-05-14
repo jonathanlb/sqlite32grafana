@@ -91,7 +91,8 @@ func Test_GetTimeSeries(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := newFromDb(db, []string{"tsTab"})
 	var ts map[string][]DataPoint
-	err := tsm.GetTimeSeries("tsTab ts x tag", "0", "10", &ts)
+	fromTo := QueryRange{From: "0", To: "10"}
+	err := tsm.GetTimeSeries("tsTab ts x tag", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
 	}
@@ -105,11 +106,30 @@ func Test_GetTimeSeries(t *testing.T) {
 	}
 }
 
+func Test_GetTimeSeriesLimit(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := newFromDb(db, []string{"tsTab"})
+	var ts map[string][]DataPoint
+	fromTo := QueryRange{From: "0", To: "10"}
+	opts := TimeSeriesQueryOpts{MaxDataPoints: 2}
+	err := tsm.GetTimeSeries("tsTab ts x tag", &fromTo, &opts, &ts)
+	if err != nil {
+		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
+	}
+	if ts == nil || len(ts) != 2 ||
+		len(ts["a"]) != 1 || len(ts["b"]) != 1 ||
+		ts["a"][0] != (DataPoint{Time: 1000, Value: 100.}) ||
+		ts["b"][0] != (DataPoint{Time: 2000, Value: 200.}) {
+		t.Fatalf(`Unexpected timeseries with limit 2 response "%+v"`, ts)
+	}
+}
+
 func Test_GetTimeSeriesParsingRange(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := newFromDb(db, []string{"tsTab"})
 	var ts map[string][]DataPoint
-	err := tsm.GetTimeSeries("tsTab ts x tag", "1969-01-01", "1971-12-31", &ts)
+	fromTo := QueryRange{From: "1969-01-01", To: "1971-12-31"}
+	err := tsm.GetTimeSeries("tsTab ts x tag", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries with datetime "%+v"`, err)
 	}
@@ -127,7 +147,8 @@ func Test_GetTimeSeriesWithTimeRange(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := newFromDb(db, []string{"tsTab"})
 	var ts map[string][]DataPoint
-	err := tsm.GetTimeSeries("tsTab ts x", "2", "4", &ts)
+	fromTo := QueryRange{From: "2", To: "4"}
+	err := tsm.GetTimeSeries("tsTab ts x", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
 	}
@@ -142,7 +163,8 @@ func Test_GetTimeSeriesWithDatetimeIndex(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := newFromDb(db, []string{"tsTab"})
 	var ts map[string][]DataPoint
-	err := tsm.GetTimeSeries("tsTab dt x", "2020-04-02", "2020-04-04", &ts)
+	fromTo := QueryRange{From: "2020-04-02", To: "2020-04-04"}
+	err := tsm.GetTimeSeries("tsTab dt x", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
 	}
@@ -157,7 +179,8 @@ func Test_GetTimeSeriesFailsOnMissingTable(t *testing.T) {
 	db, _ := sql.Open("sqlite3", ":memory:")
 	tsm := newFromDb(db, []string{})
 	var ts map[string][]DataPoint
-	err := tsm.GetTimeSeries("tsTab x", "0", "10", &ts)
+	fromTo := QueryRange{From: "0", To: "10"}
+	err := tsm.GetTimeSeries("tsTab x", &fromTo, nil, &ts)
 	if err == nil || !strings.HasPrefix(err.Error(), "malformed target") {
 		t.Fatalf(`Unexpected error querying missing table "%+v"`, err)
 	}
@@ -167,7 +190,8 @@ func Test_GetTimeSeriesFailsOnUnspecifiedTimeColumn(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := newFromDb(db, []string{"tsTab"})
 	var ts map[string][]DataPoint
-	err := tsm.GetTimeSeries("tsTab", "0", "10", &ts)
+	fromTo := QueryRange{From: "0", To: "10"}
+	err := tsm.GetTimeSeries("tsTab", &fromTo, nil, &ts)
 	if err == nil || !strings.HasPrefix(err.Error(), "malformed target") {
 		t.Fatalf(`Unexpected error querying missing time column "%+v"`, err)
 	}
@@ -177,7 +201,8 @@ func Test_GetTimeSeriesFailsOnUnspecifiedValueColumn(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := newFromDb(db, []string{"tsTab"})
 	var ts map[string][]DataPoint
-	err := tsm.GetTimeSeries("tsTabt ", "0", "10", &ts)
+	fromTo := QueryRange{From: "0", To: "10"}
+	err := tsm.GetTimeSeries("tsTabt ", &fromTo, nil, &ts)
 	if err == nil || !strings.HasPrefix(err.Error(), "malformed target") {
 		t.Fatalf(`Unexpected error querying missing table "%+v"`, err)
 	}

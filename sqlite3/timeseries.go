@@ -29,7 +29,7 @@ var sugar = logger.Sugar()
 
 var integerSqlTypes = NewSet("int", "integer", "tinyint")
 
-func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, from string, to string, dest *map[string][]DataPoint) error {
+func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, fromTo *QueryRange, opts *TimeSeriesQueryOpts, dest *map[string][]DataPoint) error {
 	tableName, timeColumn, valueColumn, tagColumns := this.target2tokens(target)
 	if tableName == "" || timeColumn == "" || valueColumn == "" {
 		return errors.Errorf(`malformed target "%s"`, target)
@@ -41,19 +41,27 @@ func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, from string, t
 		colBuilder.WriteString(", ")
 		colBuilder.WriteString(i)
 	}
-	fromTime, err := this.formatUserTimeForQuery(tableName, timeColumn, from)
+	fromTime, err := this.formatUserTimeForQuery(tableName, timeColumn, fromTo.From)
 	if err != nil {
 		return errors.Wrap(err, "get from time for timeseries")
 	}
-	toTime, err := this.formatUserTimeForQuery(tableName, timeColumn, to)
+	toTime, err := this.formatUserTimeForQuery(tableName, timeColumn, fromTo.To)
 	if err != nil {
 		return errors.Wrap(err, "get to time for timeseries")
 	}
 
 	timeReader := this.getTimeToMillis(tableName, timeColumn) // XXX memoize?
-	query := fmt.Sprintf(
+
+	var queryBuilder strings.Builder
+	queryBuilder.WriteString(fmt.Sprintf(
 		"SELECT %s FROM %s WHERE %s >= ? AND %s < ? ORDER BY %s",
-		colBuilder.String(), tableName, timeColumn, timeColumn, timeColumn)
+		colBuilder.String(), tableName, timeColumn, timeColumn, timeColumn))
+
+	if opts != nil && opts.MaxDataPoints > 0 {
+		queryBuilder.WriteString(fmt.Sprintf(" LIMIT %d", opts.MaxDataPoints))
+	}
+
+	query := queryBuilder.String()
 	sugar.Debugw("timeseries query",
 		"query", query,
 		"from", fromTime,

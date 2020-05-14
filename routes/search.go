@@ -5,7 +5,9 @@ import (
 )
 
 func InstallSearch(app *fiber.App) {
-	app.Get("/search", func(c *fiber.Ctx) {
+	app.Post("/search", func(c *fiber.Ctx) {
+		body := []byte(c.Body())
+		sugar.Debugw("route search", "body", string(body))
 		sugar.Info(c.OriginalURL())
 	})
 }

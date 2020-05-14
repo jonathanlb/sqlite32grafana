@@ -24,5 +24,7 @@ func main() {
 	var app = fiber.New()
 	app.Use(logger.New())
 	routes.InstallAllRoutes(app, tsm)
-	app.Listen(config.Port)
+	if err := app.Listen(config.Port); err != nil {
+		log.Fatalf("cannot listen on port %d: %+v", config.Port, err)
+	}
 }
