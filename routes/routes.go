@@ -2,20 +2,17 @@ package routes
 
 import (
 	"github.com/gofiber/fiber"
+	"github.com/jonathanlb/sqlite32grafana/cli"
 	"github.com/jonathanlb/sqlite32grafana/sqlite3"
-	"go.uber.org/zap"
 )
 
-var logger, _ = zap.NewDevelopment()
+var sugar = cli.Logger()
 
-// var logger, _ = zap.NewProduction()
-var sugar = logger.Sugar()
-
-func InstallAllRoutes(app *fiber.App, tsm sqlite3.TimeSeriesManager) {
-	InstallTestConnection(app)
-	InstallSearch(app)
-	InstallQuery(app, tsm)
-	InstallAnnotations(app)
-	InstallTagKeys(app)
-	InstallTagValues(app)
+func InstallAllRoutes(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesManager) {
+	InstallTestConnection(app, route)
+	InstallSearch(app, route, tsm)
+	InstallQuery(app, route, tsm)
+	InstallAnnotations(app, route, tsm)
+	InstallTagKeys(app, route, tsm)
+	InstallTagValues(app, route, tsm)
 }

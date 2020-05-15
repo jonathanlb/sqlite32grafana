@@ -8,8 +8,8 @@ import (
 )
 
 func Test_GetTagKeysFailsOnInvalidTableName(t *testing.T) {
-  db, _ := sql.Open("sqlite3", ":memory:")
-	tsm := newFromDb(db, []string{})
+	db, _ := sql.Open("sqlite3", ":memory:")
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "t"}
 	var keys []TagKey
 	if err := tsm.GetTagKeys("nonExistentTable", &keys); err == nil {
 		t.Fatalf("Did not fail to get keys from non-existant table: %v", keys)
@@ -17,9 +17,9 @@ func Test_GetTagKeysFailsOnInvalidTableName(t *testing.T) {
 }
 
 func Test_GetTagKeys(t *testing.T) {
-  db, _ := sql.Open("sqlite3", ":memory:")
+	db, _ := sql.Open("sqlite3", ":memory:")
 	db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)")
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "t"}
 	var keys []TagKey
 	if err := tsm.GetTagKeys("tsTab t x", &keys); err != nil {
 		t.Fatalf("Failed to query keys: %v", err)
@@ -31,15 +31,15 @@ func Test_GetTagKeys(t *testing.T) {
 }
 
 func Test_GetTagKeysRaw(t *testing.T) {
-  db, _ := sql.Open("sqlite3", ":memory:")
+	db, _ := sql.Open("sqlite3", ":memory:")
 	db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)")
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "t"}
 	var keys []TagKey
 	if err := tsm.GetTagKeys("tsTab", &keys); err != nil {
 		t.Fatalf("Failed to query keys: %v", err)
 	}
-	if keys == nil || len(keys) != 3 {
-		t.Fatalf("Failed to infer all 3 keys, got %v", keys)
+	if keys == nil || len(keys) != 2 {
+		t.Fatalf("Failed to infer 2 (non-time column) keys, got %v", keys)
 	}
 }
 

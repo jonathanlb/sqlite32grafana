@@ -5,12 +5,12 @@ import (
 )
 
 func (this *sqliteTimeSeriesManager) GetTagKeys(target string, dest *[]TagKey) error {
-	tableName, timeColumn, valueColumn, keyColumns := this.target2tokens(target)
-	if err := this.getSchema(tableName, dest); err != nil {
+	valueColumn, keyColumns := this.target2tokens(target)
+	if err := this.getSchema(this.table, dest); err != nil {
 		return err
 	}
 	// remove the specified columns from the result
-	for _, col := range append(keyColumns, timeColumn, valueColumn) {
+	for _, col := range append(keyColumns, this.timeColumn, valueColumn) {
 		for idx, i := range *dest {
 			if col == i.Text {
 				n1 := len(*dest) - 1

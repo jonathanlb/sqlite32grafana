@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber"
+	"github.com/jonathanlb/sqlite32grafana/cli"
 )
 
 func Test_FailEmptyTimeseries(t *testing.T) {
@@ -16,8 +17,9 @@ func Test_FailEmptyTimeseries(t *testing.T) {
 		os.Remove(dbFileName)
 	}()
 	tsm := createTimeSeriesManager(dbFileName)
-	InstallQuery(app, tsm)
-	resp, err := postResponse(app, "/query", "")
+	route := cli.RouteConfig{DBAlias: "db", Table: "tab", TimeColumn: "t"}
+	InstallQuery(app, route, tsm)
+	resp, err := postResponse(app, "/db/tab/t/query", "")
 
 	checkStatus(t, "query-empty-timeseries", 400, resp, err)
 }
@@ -29,9 +31,10 @@ func Test_FailBadJsonTimeseries(t *testing.T) {
 		os.Remove(dbFileName)
 	}()
 	tsm := createTimeSeriesManager(dbFileName)
-	InstallQuery(app, tsm)
+	route := cli.RouteConfig{DBAlias: "db", Table: "tab", TimeColumn: "t"}
+	InstallQuery(app, route, tsm)
 	queryStr := `{"range": {`
-	resp, err := postResponse(app, "/query", queryStr)
+	resp, err := postResponse(app, "/db/tab/t/query", queryStr)
 
 	checkStatus(t, "query-badjson-timeseries", 400, resp, err)
 }
@@ -44,7 +47,8 @@ func Test_GetTimeseries(t *testing.T) {
 	}()
 
 	tsm := createTimeSeriesManager(dbFileName)
-	InstallQuery(app, tsm)
+	route := cli.RouteConfig{DBAlias: "db", Table: "tab", TimeColumn: "t"}
+	InstallQuery(app, route, tsm)
 
 	queryStr := `{
     "range": {
@@ -52,12 +56,12 @@ func Test_GetTimeseries(t *testing.T) {
     },
     "interval": "1h",
     "intervalMs": 3600000,
-    "targets": [{ "target": "series t x tag", "refId": "A", "type": "timeserie" }],
+    "targets": [{ "target": "x tag", "refId": "A", "type": "timeserie" }],
     "adhocFilters": [],
     "format": "json",
     "maxDataPoints": 1023
   }`
-	resp, err := postResponse(app, "/query", queryStr)
+	resp, err := postResponse(app, "/db/tab/t/query", queryStr)
 
 	check200(t, "query-timeseries", resp, err)
 	body, _ := ioutil.ReadAll(resp.Body)

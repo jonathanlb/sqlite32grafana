@@ -11,11 +11,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-func Test_CreateInMemory(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
-	newFromDb(db, []string{})
-}
-
 func Test_CreateFromFileNames(t *testing.T) {
 	dbFileName := tempFileName(t)
 	configFileName := tempFileName(t)
@@ -32,7 +27,7 @@ func Test_CreateFromFileNames(t *testing.T) {
 	db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)")
 	db.Close()
 
-	_, err = New(dbFileName, []string{})
+	_, err = New(dbFileName, "tsTab", "t")
 	if err != nil {
 		t.Fatalf(`Cannot create test db "%+v"`, err)
 	}
@@ -40,7 +35,7 @@ func Test_CreateFromFileNames(t *testing.T) {
 
 func Test_formatUserTimeForQuery(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"}).(*sqliteTimeSeriesManager)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
 	ts, err := tsm.formatUserTimeForQuery("tsTab", "ts", "2020-05-01")
 	if err != nil {
 		t.Fatalf(`cannot parse time "2020-05-01" for int time: %+v`, err)
@@ -87,12 +82,23 @@ func Test_formatUserTimeForQuery(t *testing.T) {
 	}
 }
 
+func Test_selectFromTarget(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+	_, _, selected := tsm.selectTarget("x tag datetime(t,'unixepoch')")
+	expected := "ts, x, tag, datetime(t,'unixepoch')"
+
+	if selected != expected {
+		t.Fatalf(`Expected SELECT clause "%s", got "%s"`, expected, selected)
+	}
+}
+
 func Test_GetTimeSeries(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
 	var ts map[string][]DataPoint
 	fromTo := QueryRange{From: "0", To: "10"}
-	err := tsm.GetTimeSeries("tsTab ts x tag", &fromTo, nil, &ts)
+	err := tsm.GetTimeSeries("x tag", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
 	}
@@ -108,11 +114,11 @@ func Test_GetTimeSeries(t *testing.T) {
 
 func Test_GetTimeSeriesLimit(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
 	var ts map[string][]DataPoint
 	fromTo := QueryRange{From: "0", To: "10"}
 	opts := TimeSeriesQueryOpts{MaxDataPoints: 2}
-	err := tsm.GetTimeSeries("tsTab ts x tag", &fromTo, &opts, &ts)
+	err := tsm.GetTimeSeries("x tag", &fromTo, &opts, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
 	}
@@ -126,10 +132,10 @@ func Test_GetTimeSeriesLimit(t *testing.T) {
 
 func Test_GetTimeSeriesParsingRange(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
 	var ts map[string][]DataPoint
 	fromTo := QueryRange{From: "1969-01-01", To: "1971-12-31"}
-	err := tsm.GetTimeSeries("tsTab ts x tag", &fromTo, nil, &ts)
+	err := tsm.GetTimeSeries("x tag", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries with datetime "%+v"`, err)
 	}
@@ -145,10 +151,10 @@ func Test_GetTimeSeriesParsingRange(t *testing.T) {
 
 func Test_GetTimeSeriesWithTimeRange(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
 	var ts map[string][]DataPoint
 	fromTo := QueryRange{From: "2", To: "4"}
-	err := tsm.GetTimeSeries("tsTab ts x", &fromTo, nil, &ts)
+	err := tsm.GetTimeSeries("x", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
 	}
@@ -161,10 +167,10 @@ func Test_GetTimeSeriesWithTimeRange(t *testing.T) {
 
 func Test_GetTimeSeriesWithDatetimeIndex(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "dt"}
 	var ts map[string][]DataPoint
 	fromTo := QueryRange{From: "2020-04-02", To: "2020-04-04"}
-	err := tsm.GetTimeSeries("tsTab dt x", &fromTo, nil, &ts)
+	err := tsm.GetTimeSeries("x", &fromTo, nil, &ts)
 	if err != nil {
 		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
 	}
@@ -176,33 +182,47 @@ func Test_GetTimeSeriesWithDatetimeIndex(t *testing.T) {
 }
 
 func Test_GetTimeSeriesFailsOnMissingTable(t *testing.T) {
-	db, _ := sql.Open("sqlite3", ":memory:")
-	tsm := newFromDb(db, []string{})
-	var ts map[string][]DataPoint
-	fromTo := QueryRange{From: "0", To: "10"}
-	err := tsm.GetTimeSeries("tsTab x", &fromTo, nil, &ts)
-	if err == nil || !strings.HasPrefix(err.Error(), "malformed target") {
-		t.Fatalf(`Unexpected error querying missing table "%+v"`, err)
+	dbFileName := tempFileName(t)
+	defer func() {
+		os.Remove(dbFileName)
+	}()
+	db, err := sql.Open("sqlite3", dbFileName)
+	if err != nil {
+		t.Fatalf(`Cannot create file-backed db at %s: "%+v"`, dbFileName, err)
+	}
+	db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)")
+	db.Close()
+
+	tsm, err := New(dbFileName, "someTable", "ts")
+	if err == nil || tsm != nil {
+		t.Fatalf("Expected time series manager failure with missing table....")
 	}
 }
 
 func Test_GetTimeSeriesFailsOnUnspecifiedTimeColumn(t *testing.T) {
-	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"})
-	var ts map[string][]DataPoint
-	fromTo := QueryRange{From: "0", To: "10"}
-	err := tsm.GetTimeSeries("tsTab", &fromTo, nil, &ts)
-	if err == nil || !strings.HasPrefix(err.Error(), "malformed target") {
-		t.Fatalf(`Unexpected error querying missing time column "%+v"`, err)
+	dbFileName := tempFileName(t)
+	defer func() {
+		os.Remove(dbFileName)
+	}()
+	db, err := sql.Open("sqlite3", dbFileName)
+	if err != nil {
+		t.Fatalf(`Cannot create file-backed db at %s: "%+v"`, dbFileName, err)
+	}
+	db.Exec("CREATE TABLE tsTab (x INT, tag TEXT, t INT)")
+	db.Close()
+
+	tsm, err := New(dbFileName, "tsTab", "")
+	if err != nil || tsm != nil {
+		t.Fatalf("Expected time series manager failure with missing time column.")
 	}
 }
 
 func Test_GetTimeSeriesFailsOnUnspecifiedValueColumn(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"})
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
 	var ts map[string][]DataPoint
 	fromTo := QueryRange{From: "0", To: "10"}
-	err := tsm.GetTimeSeries("tsTabt ", &fromTo, nil, &ts)
+	err := tsm.GetTimeSeries("", &fromTo, nil, &ts)
 	if err == nil || !strings.HasPrefix(err.Error(), "malformed target") {
 		t.Fatalf(`Unexpected error querying missing table "%+v"`, err)
 	}
@@ -224,7 +244,7 @@ func Test_guessTimeScalar(t *testing.T) {
 			t.Fatalf(`cannot issue query "%s" for test: %+v`, q, err)
 		}
 	}
-	tsm := newFromDb(db, []string{"tsTab"}).(*sqliteTimeSeriesManager)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "dt"}
 	scalar, sign := tsm.guessTimeScalar("tsTab", "seconds")
 	if scalar != 1000 || !sign {
 		t.Fatalf(`expected scalar, sign of 1000, true, but got %d, %t`, scalar, sign)
@@ -243,45 +263,30 @@ func Test_guessTimeScalar(t *testing.T) {
 
 func Test_target2tokens(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"}).(*sqliteTimeSeriesManager)
-	table, time, value, tags := tsm.target2tokens("tsTab t x")
-	if table != "tsTab" || time != "t" || value != "x" || len(tags) != 0 {
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+	value, tags := tsm.target2tokens("x")
+	if value != "x" || len(tags) != 0 {
 		t.Fatalf(
-			`Expected target2tokens to be "tsTab, t, x, []", but got "%s, %s, %s, %v"`,
-			table, time, value, tags)
+			`Expected target2tokens to be "x, []", but got "%s, %v"`,
+			value, tags)
 	}
-}
 
-func Test_target2tokensFailsOnMissingTable(t *testing.T) {
-	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"}).(*sqliteTimeSeriesManager)
-	table, time, value, tags := tsm.target2tokens("foo")
-	if table != "" || time != "" || value != "" || len(tags) != 0 {
+	value, tags = tsm.target2tokens("x tag")
+	if value != "x" || len(tags) != 1 || tags[0] != "tag" {
 		t.Fatalf(
-			`Expected failure of target2tokens, but got "%s, %s, %s, %v"`,
-			table, time, value, tags)
-	}
-}
-
-func Test_target2tokensFailsOnMissingTableWithTarget(t *testing.T) {
-	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"}).(*sqliteTimeSeriesManager)
-	table, time, value, tags := tsm.target2tokens("foo t x")
-	if table != "" || time != "" || value != "" || len(tags) != 0 {
-		t.Fatalf(
-			`Expected failure of target2tokens, but got "%s, %s, %s, %v"`,
-			table, time, value, tags)
+			`Expected target2tokens to be "x, [tag]", but got "%s, %v"`,
+			value, tags)
 	}
 }
 
 func Test_target2tokensOnOverspecified(t *testing.T) {
 	db := createDbWithTable(t)
-	tsm := newFromDb(db, []string{"tsTab"}).(*sqliteTimeSeriesManager)
-	table, time, value, tags := tsm.target2tokens("tsTab t x tag ...")
-	if table != "tsTab" || time != "t" || value != "x" || len(tags) != 2 {
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+	value, tags := tsm.target2tokens("x tag ...")
+	if value != "x" || len(tags) != 2 {
 		t.Fatalf(
-			`Expected target2tokens "tsTab, t, x, tag, ...", but got "%s, %s, %s, %v"`,
-			table, time, value, tags)
+			`Expected target2tokens "x, tag, ...", but got "%s, %v"`,
+			value, tags)
 	}
 }
 

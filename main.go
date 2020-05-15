@@ -16,14 +16,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	tsm, err := sqlite3.New(config.DBFile, config.Tables)
-	if err != nil {
-		log.Fatalf("cannot open db: %v", err)
-	}
 
 	var app = fiber.New()
 	app.Use(logger.New())
-	routes.InstallAllRoutes(app, tsm)
+	for _, route := range config.Routes {
+		tsm, err := sqlite3.New(route.DBFile, route.Table, route.TimeColumn)
+		if err != nil {
+			log.Fatalf("cannot open db for route %+v: %+v", route, err)
+		}
+		routes.InstallAllRoutes(app, route, tsm)
+	}
+
 	if err := app.Listen(config.Port); err != nil {
 		log.Fatalf("cannot listen on port %d: %+v", config.Port, err)
 	}

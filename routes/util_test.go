@@ -61,7 +61,7 @@ func createTimeSeriesManager(dbFileName string) sqlite3.TimeSeriesManager {
 	}
 	db.Close()
 
-	tsm, err := sqlite3.New(dbFileName, []string{"series"})
+	tsm, err := sqlite3.New(dbFileName, "series", "t")
 	if err != nil {
 		sugar.Fatalf(`cannot create time series manager: %v`, err)
 	}

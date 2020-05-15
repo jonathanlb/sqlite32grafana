@@ -2,8 +2,10 @@ package routes
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/gofiber/fiber"
+	"github.com/jonathanlb/sqlite32grafana/cli"
 	"github.com/jonathanlb/sqlite32grafana/sqlite3"
 )
 
@@ -23,8 +25,9 @@ type Timeseries struct {
 	DataPoints [][]float64 `json:"datapoints"`
 }
 
-func InstallQuery(app *fiber.App, tsm sqlite3.TimeSeriesManager) {
-	app.Post("/query", func(c *fiber.Ctx) {
+func InstallQuery(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesManager) {
+	endPoint := fmt.Sprintf("%s/%s/%s/query", route.DBAlias, route.Table, route.TimeColumn)
+	app.Post(endPoint, func(c *fiber.Ctx) {
 		var query QueryPayload
 		body := []byte(c.Body())
 		err := json.Unmarshal(body, &query)

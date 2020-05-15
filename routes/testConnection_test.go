@@ -4,12 +4,14 @@ import (
 	"testing"
 
 	"github.com/gofiber/fiber"
+	"github.com/jonathanlb/sqlite32grafana/cli"
 )
 
 func Test_TestConnection(t *testing.T) {
 	app := fiber.New(&fiber.Settings{})
-	InstallTestConnection(app)
-	resp, err := getResponse(app, "/")
+	route := cli.RouteConfig{DBAlias: "db", Table: "tab", TimeColumn: "t"}
+	InstallTestConnection(app, route)
+	resp, err := getResponse(app, "/db/tab/t")
 	defer resp.Body.Close()
 
 	check200(t, "test-connection", resp, err)
