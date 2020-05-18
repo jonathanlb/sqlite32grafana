@@ -36,8 +36,7 @@ func InstallQuery(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesM
 			err = validateQuery(&query)
 		}
 		if err != nil {
-			c.SendStatus(400)
-			c.SendString(err.Error())
+			send400(c, err)
 			return
 		}
 
@@ -52,8 +51,7 @@ func InstallQuery(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesM
 			// XXX switch on target.Type
 			var series map[string][]sqlite3.DataPoint
 			if err := tsm.GetTimeSeries(target.Target, &query.Range, &queryOpts, &series); err != nil {
-				c.SendStatus(400)
-				c.SendString(err.Error())
+				send400(c, err)
 				return
 			} // XXX it looks like response spec is one series per target?
 			for _, data := range series {
@@ -63,16 +61,7 @@ func InstallQuery(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesM
 				})
 			}
 		}
-
-		resultBytes, err := json.Marshal(result)
-		if err != nil {
-			c.SendStatus(400)
-			c.SendString(err.Error())
-			return
-		}
-		c.Set("Content-Type", "application/json")
-		c.Send(resultBytes)
-		c.SendStatus(200)
+		send200(c, result)
 	})
 }
 

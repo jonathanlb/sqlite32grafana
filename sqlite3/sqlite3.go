@@ -6,8 +6,8 @@ type DataPoint struct {
 }
 
 type TagKey struct {
-	Type string
-	Text string
+	Type string `json:"type"`
+	Text string ` json:"text"`
 }
 
 type QueryRangeRaw struct {

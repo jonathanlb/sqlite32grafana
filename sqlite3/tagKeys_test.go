@@ -2,6 +2,7 @@ package sqlite3
 
 import (
 	"database/sql"
+	"reflect"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -38,8 +39,12 @@ func Test_GetTagKeysRaw(t *testing.T) {
 	if err := tsm.GetTagKeys("tsTab", &keys); err != nil {
 		t.Fatalf("Failed to query keys: %v", err)
 	}
-	if keys == nil || len(keys) != 2 {
-		t.Fatalf("Failed to infer 2 (non-time column) keys, got %v", keys)
+	expectedKeys := []TagKey{
+		TagKey{"number", "x"},
+		TagKey{"string", "tag"},
+	}
+	if !reflect.DeepEqual(expectedKeys, keys) {
+		t.Fatalf(`expected keys "%+v", but got "%+v"`, expectedKeys, keys)
 	}
 }
 
