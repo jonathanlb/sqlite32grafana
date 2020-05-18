@@ -32,6 +32,12 @@ http://your-host:port/db-file-or-alias/table-name/time-column
 
 When you build a query, select your datasource; the "timeserie" option, and a
 column in table you'll be querying.
+The drop-down hint will auto-populate with the table column names, from which
+you can select one.
+
+At the moment, you can enter any text you wish, which will blindly be used in
+the SELECT statement, but this feature/bug will be disabled shortly, replaced
+with a group-by feature....
 
 ## The Time Column
 
@@ -45,7 +51,7 @@ sqlite32grafana uses the `DEBUG` environment variable to turn on development
 debugging.  Any non-empty value will trigger it at the moment....
 
 ## TODO
-- Implement the search query.
-- Implement tag-keys.
+- Install raw-query option.
+- Implement group-by option to regular queries.
 - Implement tag-values.
 - Summarize intervals.
