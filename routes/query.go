@@ -53,10 +53,10 @@ func InstallQuery(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesM
 			if err := tsm.GetTimeSeries(target.Target, &query.Range, &queryOpts, &series); err != nil {
 				send400(c, err)
 				return
-			} // XXX it looks like response spec is one series per target?
-			for _, data := range series {
+			}
+			for key, data := range series {
 				result = append(result, Timeseries{
-					Target:     target.Target,
+					Target:     key,
 					DataPoints: datapointsToArray(data),
 				})
 			}

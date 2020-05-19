@@ -97,8 +97,9 @@ sqlite32grafana uses the `DEBUG` environment variable to turn on development
 debugging.  Any non-empty value will trigger it at the moment....
 
 ## TODO
-- Fix the tag values displayed in the legend.
-- Implement multiple group-by options.
-- Implement tag-values.
+- Implement table queries.
 - Add intervalization aliases to allow duration, e.g. `i(10s)` to intervalize
 every 10 seconds.
+- Apply adhocFilters from grafana query.
+- Implement multiple group-by options.
+- Implement tag-values.
