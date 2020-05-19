@@ -29,7 +29,7 @@ func Test_EmptySearch(t *testing.T) {
 	if err := json.Unmarshal(body, &searchResults); err != nil {
 		t.Fatalf("failed to read search results response: %v", err)
 	}
-	expected := []string{"x", "tag"}
+	expected := []string{"x", "tag", "t"}
 	if !reflect.DeepEqual(expected, searchResults) {
 		t.Fatalf(`expected search result "%+v", but got "%+v"`, expected, searchResults)
 	}

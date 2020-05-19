@@ -15,33 +15,39 @@ type searchTarget struct {
 }
 
 // Set up the search end point for simple-json-datasource.... which seems
-// to wire up column hints.... tag-keys?
+// to wire up column hints.... We will use tag-keys + time column for now.
 func InstallSearch(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesManager) {
 	endPoint := fmt.Sprintf("%s/%s/%s/search", route.DBAlias, route.Table, route.TimeColumn)
 	app.Post(endPoint, func(c *fiber.Ctx) {
 		body := []byte(c.Body())
-		var target searchTarget
+		var target string
 
 		if len(c.Body()) > 0 {
-			err := json.Unmarshal(body, &target)
+			var targetJson searchTarget
+			err := json.Unmarshal(body, &targetJson)
 			if err != nil {
 				send400(c, err)
 				return
 			}
-			target.Target = strings.ToLower(target.Target)
+			target = strings.ToLower(targetJson.Target)
 		} else {
-			target = searchTarget{""}
+			target = ""
 		}
 
 		var tagKeys []sqlite3.TagKey
 		tsm.GetTagKeys(route.Table, &tagKeys)
 		result := []string{}
-		for _, i := range tagKeys {
-			resultText := strings.ToLower(i.Text)
-			if strings.Contains(resultText, target.Target) {
-				result = append(result, resultText)
+
+		addTagKey := func(tag string) {
+			lowerTag := strings.ToLower(tag)
+			if strings.Contains(lowerTag, target) {
+				result = append(result, lowerTag)
 			}
 		}
+		for _, i := range tagKeys {
+			addTagKey(strings.ToLower(i.Text))
+		}
+		addTagKey(route.TimeColumn)
 		send200(c, result)
 	})
 }
