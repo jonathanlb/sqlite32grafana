@@ -11,7 +11,7 @@ import (
 
 	"github.com/jonathanlb/sqlite32grafana/cli"
 	"github.com/jonathanlb/sqlite32grafana/timecodex"
-	_ "github.com/mattn/go-sqlite3"
+	_ "github.com/mattn/go-sqlite3" // db driver
 	"github.com/pkg/errors"
 )
 
@@ -23,48 +23,37 @@ type sqliteTimeSeriesManager struct {
 
 var sugar = cli.Logger()
 
-var integerSqlTypes = NewSet("int", "integer", "tinyint")
+var integerSQLTypes = NewSet("int", "integer", "tinyint")
 
-func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, fromTo *QueryRange, opts *TimeSeriesQueryOpts, dest *map[string][]DataPoint) error {
-	valueColumn, tagColumns, selectColumns := this.selectTarget(target)
-	if valueColumn == "" {
-		return errors.Errorf(`malformed target "%s"`, target)
-	}
-
-	fromTime, err := this.formatUserTimeForQuery(this.table, this.timeColumn, fromTo.From)
+func (seriesMan *sqliteTimeSeriesManager) GetTimeSeries(target string, fromTo *QueryRange, opts *TimeSeriesQueryOpts, dest *map[string][]DataPoint) error {
+	fromTime, err := seriesMan.formatUserTimeForQuery(seriesMan.table, seriesMan.timeColumn, fromTo.From)
 	if err != nil {
 		return errors.Wrap(err, "get from time for timeseries")
 	}
-	toTime, err := this.formatUserTimeForQuery(this.table, this.timeColumn, fromTo.To)
+	toTime, err := seriesMan.formatUserTimeForQuery(seriesMan.table, seriesMan.timeColumn, fromTo.To)
 	if err != nil {
 		return errors.Wrap(err, "get to time for timeseries")
 	}
 
-	timeReader := this.getTimeToMillis(this.table, this.timeColumn) // XXX memoize?
+	timeReader := seriesMan.getTimeToMillis(seriesMan.table, seriesMan.timeColumn) // XXX memoize?
 
-	var queryBuilder strings.Builder
-	queryBuilder.WriteString(fmt.Sprintf(
-		"SELECT %s FROM %s WHERE %s >= ? AND %s < ? ORDER BY %s",
-		selectColumns, this.table, this.timeColumn, this.timeColumn, this.timeColumn))
-
-	if opts != nil && opts.MaxDataPoints > 0 {
-		queryBuilder.WriteString(fmt.Sprintf(" LIMIT %d", opts.MaxDataPoints))
-	}
-
-	query := queryBuilder.String()
+	query, valueColumn, tagColumns := seriesMan.buildQuery(target, opts)
 	sugar.Debugw("timeseries query",
 		"query", query,
 		"from", fromTime,
 		"to", toTime)
+	if valueColumn == "" {
+		return errors.Errorf(`malformed target "%s"`, target)
+	}
 
-	rows, err := this.db.Query(query, fromTime, toTime)
+	rows, err := seriesMan.db.Query(query, fromTime, toTime)
 	if err != nil {
 		return errors.Wrap(err, "bad query for timeseries")
 	}
 	rowCount := 0
 	result := make(map[string][]DataPoint)
 	var values []interface{}
-	tag := valueColumn
+	tag := valueColumn // default value
 	for rows.Next() {
 		rowCount++
 		if values == nil {
@@ -90,7 +79,7 @@ func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, fromTo *QueryR
 
 		if len(tagColumns) > 0 {
 			var tagBuilder strings.Builder
-			tagBuilder.WriteString(*values[2].(*string))
+			tagBuilder.WriteString(*values[2].(*string)) // XXX cast can break server
 			for _, i := range values[3:] {
 				tagBuilder.WriteString(" ")
 				tagBuilder.WriteString(*i.(*string))
@@ -105,10 +94,11 @@ func (this *sqliteTimeSeriesManager) GetTimeSeries(target string, fromTo *QueryR
 	return nil
 }
 
-func (this *sqliteTimeSeriesManager) GetTagValues(tableName string, key string, dest *[]string) error {
+func (seriesMan *sqliteTimeSeriesManager) GetTagValues(tableName string, key string, dest *[]string) error {
 	return nil
 }
 
+// New builds a new timeseries manager backed by the DB file and table with indexed time column.
 func New(dbFileName string, table string, timeColumn string) (TimeSeriesManager, error) {
 	db, err := sql.Open("sqlite3", dbFileName)
 	if err != nil {
@@ -131,6 +121,28 @@ func New(dbFileName string, table string, timeColumn string) (TimeSeriesManager,
 	return nil, errors.Wrap(err, fmt.Sprintf("cannot find time column %s in table with schema %+v", timeColumn, schema))
 }
 
+func (seriesMan *sqliteTimeSeriesManager) buildQuery(target string, opts *TimeSeriesQueryOpts) (string, string, []string) {
+	valueColumn, tagColumns, selectExpr, groupExpr := seriesMan.parseTarget(target)
+	var queryBuilder strings.Builder
+
+	var orderBy string
+	if groupExpr == "" {
+		orderBy = seriesMan.timeColumn
+	} else {
+		orderBy = strings.Replace(groupExpr, " GROUP BY ", "", 1)
+	}
+
+	queryBuilder.WriteString(fmt.Sprintf(
+		"SELECT %s FROM %s WHERE %s >= ? AND %s < ?%s ORDER BY %s",
+		selectExpr, seriesMan.table, seriesMan.timeColumn, seriesMan.timeColumn, groupExpr, orderBy))
+
+	if opts != nil && opts.MaxDataPoints > 0 {
+		queryBuilder.WriteString(fmt.Sprintf(" LIMIT %d", opts.MaxDataPoints))
+	}
+
+	return queryBuilder.String(), valueColumn, tagColumns
+}
+
 func dateTimeToMillis(input interface{}) (int64, error) {
 	dateStr, ok := input.(*string)
 	if !ok {
@@ -148,15 +160,15 @@ func dateTimeToMillis(input interface{}) (int64, error) {
 
 // Convert user-supplied time string to one comparable to the stated type
 // of the column.
-func (this *sqliteTimeSeriesManager) formatUserTimeForQuery(tableName string, timeColumn string, timeStr string) (interface{}, error) {
-	columnType := this.getColumnType(tableName, timeColumn)
+func (seriesMan *sqliteTimeSeriesManager) formatUserTimeForQuery(tableName string, timeColumn string, timeStr string) (interface{}, error) {
+	columnType := seriesMan.getColumnType(tableName, timeColumn)
 	switch strings.ToLower(columnType) {
 	case "int":
 		t, err := timecodex.StringToTime(timeStr)
 		if err != nil {
 			return nil, err
 		}
-		unitGuess := this.guessTimeMetric(tableName, timeColumn, t)
+		unitGuess := seriesMan.guessTimeMetric(tableName, timeColumn, t)
 		return unitGuess, nil
 	case "datetime":
 		return timeStr, nil
@@ -167,9 +179,9 @@ func (this *sqliteTimeSeriesManager) formatUserTimeForQuery(tableName string, ti
 	}
 }
 
-func (this *sqliteTimeSeriesManager) getColumnType(tableName string, columnName string) string {
+func (seriesMan *sqliteTimeSeriesManager) getColumnType(tableName string, columnName string) string {
 	var schema []TagKey
-	if err := this.getSchema(tableName, &schema); err != nil {
+	if err := seriesMan.getSchema(tableName, &schema); err != nil {
 		sugar.Panicf("cannot find column type for %s in table %s: %v", columnName, tableName, err)
 	}
 	for _, tag := range schema {
@@ -204,10 +216,10 @@ func getScanDest(rows *sql.Rows) ([]interface{}, error) {
 
 // Build a slice of column names and reported types.  Note that Sqlite3 does
 // not validate that stored column values correspond to the stated type.
-func (this *sqliteTimeSeriesManager) getSchema(tableName string, dest *[]TagKey) error {
+func (seriesMan *sqliteTimeSeriesManager) getSchema(tableName string, dest *[]TagKey) error {
 	query := fmt.Sprintf("PRAGMA table_info(%s)", tableName)
 	sugar.Debugw("schema", "query", query)
-	schema, err := this.db.Query(query)
+	schema, err := seriesMan.db.Query(query)
 	if err != nil {
 		return err
 	}
@@ -227,11 +239,11 @@ func (this *sqliteTimeSeriesManager) getSchema(tableName string, dest *[]TagKey)
 
 // Determine which function to use to read a time value from the table/column
 // and translate to epoch millis for Grafana.
-func (this *sqliteTimeSeriesManager) getTimeToMillis(tableName string, timeColumn string) func(input interface{}) (int64, error) {
-	columnType := this.getColumnType(tableName, timeColumn)
+func (seriesMan *sqliteTimeSeriesManager) getTimeToMillis(tableName string, timeColumn string) func(input interface{}) (int64, error) {
+	columnType := seriesMan.getColumnType(tableName, timeColumn)
 	switch strings.ToLower(columnType) {
 	case "int":
-		return this.columnToMillis(tableName, timeColumn)
+		return seriesMan.columnToMillis(tableName, timeColumn)
 	case "datetime":
 		return dateTimeToMillis
 	case "text":
@@ -244,20 +256,19 @@ func (this *sqliteTimeSeriesManager) getTimeToMillis(tableName string, timeColum
 
 // Take a time value and guess a numeric value useable for the specified
 // timeColumn.
-func (this *sqliteTimeSeriesManager) guessTimeMetric(tableName string, timeColumn string, t time.Time) int64 {
-	scale, s := this.guessTimeScalar(tableName, timeColumn)
+func (seriesMan *sqliteTimeSeriesManager) guessTimeMetric(tableName string, timeColumn string, t time.Time) int64 {
+	scale, s := seriesMan.guessTimeScalar(tableName, timeColumn)
 	if s {
 		return t.Unix() * 1000 / scale
-	} else {
-		return t.Unix() * 1000 * scale
 	}
+	return t.Unix() * 1000 * scale
 }
 
 // Return a value to scale (multiply) numeric values from the table/column to
 // arrive at epoch millis.
-func (this *sqliteTimeSeriesManager) guessTimeScalar(tableName string, timeColumn string) (int64, bool) {
+func (seriesMan *sqliteTimeSeriesManager) guessTimeScalar(tableName string, timeColumn string) (int64, bool) {
 	query := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s LIMIT 1", timeColumn, tableName, timeColumn)
-	row := this.db.QueryRow(query)
+	row := seriesMan.db.QueryRow(query)
 	var t int64
 	row.Scan(&t)
 	return timecodex.NumberToScalar(t)
@@ -265,8 +276,12 @@ func (this *sqliteTimeSeriesManager) guessTimeScalar(tableName string, timeColum
 
 // Build a function to translate numeric time values from the table/column
 // to epoch millis.
-func (this *sqliteTimeSeriesManager) columnToMillis(tableName string, timeColumn string) func(input interface{}) (int64, error) {
-	scale, s := this.guessTimeScalar(tableName, timeColumn)
+func (seriesMan *sqliteTimeSeriesManager) columnToMillis(tableName string, timeColumn string) func(input interface{}) (int64, error) {
+	scale, s := seriesMan.guessTimeScalar(tableName, timeColumn)
+
+	errFunc := func(input interface{}) (int64, error) {
+		return 0, errors.Errorf("cannot cast %s %+v to millis", reflect.TypeOf(input), input)
+	}
 
 	if s {
 		return func(input interface{}) (int64, error) {
@@ -274,45 +289,62 @@ func (this *sqliteTimeSeriesManager) columnToMillis(tableName string, timeColumn
 			if ok {
 				return *millis * scale, nil
 			}
-			return 0, errors.Errorf("cannot cast %s %+v to millis", reflect.TypeOf(input), input)
-		}
-	} else {
-		return func(input interface{}) (int64, error) {
-			millis, ok := input.(*int64)
-			if ok {
-				return *millis / scale, nil
-			}
-			return 0, errors.Errorf("cannot cast %s %+v to millis", reflect.TypeOf(input), input)
+			return errFunc(nil)
 		}
 	}
+	return errFunc
 }
 
-// Break up the target into the value column, tag columns, and a comma-delimeted
-// string of the resulting columns.
-func (this *sqliteTimeSeriesManager) selectTarget(target string) (string, []string, string) {
-	valueColumn, tagColumns := this.target2tokens(target)
+// Break up the target into the value column, tag columns, selected columns,
+// and group-by expression if necessary
+func (seriesMan *sqliteTimeSeriesManager) parseTarget(target string) (string, []string, string, string) {
+	valueColumn, tagColumns := seriesMan.target2tokens(target)
 	var colBuilder strings.Builder
-	colBuilder.WriteString(fmt.Sprintf("%s, %s", this.timeColumn, valueColumn))
+	var groupBy string
+
+	// Scan tagOptions for a token of the form "t(...)"
+	// signalling time-intervalization.  If one is present, return it stripped
+	// of the t() and substituting "?" for the time column name; the the remaining
+	// time options.  Otherwise, return the empty string and the original options.
+	getTimeExpr := func(tagOptions []string) (string, []string) {
+		for i, tag := range tagOptions {
+			if strings.HasPrefix(tag, "t(") && strings.HasSuffix(tag, ")") {
+				remainTags := append(tagOptions[:i], tagOptions[i+1:]...)
+				timeF := strings.ReplaceAll(tag[2:len(tag)-1], "?", seriesMan.timeColumn)
+				return timeF, remainTags
+			}
+		}
+		return "", tagOptions
+	}
+
+	timeExp, tagColumns := getTimeExpr(tagColumns)
+	if timeExp == "" {
+		colBuilder.WriteString(fmt.Sprintf("%s, %s", seriesMan.timeColumn, valueColumn))
+	} else {
+		colBuilder.WriteString(fmt.Sprintf("%s, %s", timeExp, valueColumn))
+		groupBy = fmt.Sprintf(" GROUP BY %s", timeExp)
+	}
+
 	for _, i := range tagColumns {
 		colBuilder.WriteString(", ")
 		colBuilder.WriteString(i)
 	}
 
-	return valueColumn, tagColumns, colBuilder.String()
+	return valueColumn, tagColumns, colBuilder.String(), groupBy
 }
 
-// Parse the target as "valueColumn [tagColumn]*"
-func (this *sqliteTimeSeriesManager) target2tokens(target string) (string, []string) {
-	tokens := strings.Split(target, " ")
+// Parse the target as "valueColumn [tagOptions]*"
+func (seriesMan *sqliteTimeSeriesManager) target2tokens(target string) (string, []string) {
+	tokens := strings.Fields(target)
 	var valueColumn string
 	if len(tokens) > 0 {
 		valueColumn = tokens[0]
 	}
-	var tagColumns []string
+	var tagOptions []string
 	if len(tokens) > 1 {
-		tagColumns = tokens[1:]
+		tagOptions = tokens[1:]
 	}
-	return valueColumn, tagColumns
+	return valueColumn, tagOptions
 }
 
 var yyyymmdd = regexp.MustCompile(`^[0-9]{2,4}[/\- ][0-9]{1,2}[/\- ][0-9]{1,2}$`)

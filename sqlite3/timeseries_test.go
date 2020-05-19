@@ -85,11 +85,22 @@ func Test_formatUserTimeForQuery(t *testing.T) {
 func Test_selectFromTarget(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
-	_, _, selected := tsm.selectTarget("x tag datetime(t,'unixepoch')")
-	expected := "ts, x, tag, datetime(t,'unixepoch')"
+	v, tagColumns, selected, groupBy := tsm.parseTarget("x tag t(datetime(t,'unixepoch'))")
+	expectedTags := []string{"tag"}
+	expectedSelected := "datetime(t,'unixepoch'), x, tag"
+	expectedGroupBy := " GROUP BY datetime(t,'unixepoch')"
 
-	if selected != expected {
-		t.Fatalf(`Expected SELECT clause "%s", got "%s"`, expected, selected)
+	if v != "x" {
+		t.Fatalf(`Expected parsed value target "x", got "%s"`, v)
+	}
+	if !reflect.DeepEqual(expectedTags, tagColumns) {
+		t.Fatalf(`Expected tag columns "%s", got "%s"`, expectedTags, tagColumns)
+	}
+	if selected != expectedSelected {
+		t.Fatalf(`Expected SELECT clause "%s", got "%s"`, expectedSelected, selected)
+	}
+	if groupBy != expectedGroupBy {
+		t.Fatalf(`Expected GROUP BY clause "%s", got "%s"`, expectedGroupBy, groupBy)
 	}
 }
 
@@ -111,6 +122,21 @@ func Test_GetTimeSeries(t *testing.T) {
 		t.Fatalf(`Unexpected timeseries response "%+v"`, ts)
 	}
 }
+
+/*
+func Test_GetTimeSeriesWithIntTag(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+	var ts map[string][]DataPoint
+	fromTo := QueryRange{From: "0", To: "10"}
+	err := tsm.GetTimeSeries("x x", &fromTo, nil, &ts)
+	if err != nil {
+		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
+	}
+	if ts == nil || len(ts) != 4 {
+		t.Fatalf(`Unexpected timeseries response "%+v"`, ts)
+	}
+}*/
 
 func Test_GetTimeSeriesLimit(t *testing.T) {
 	db := createDbWithTable(t)
@@ -225,6 +251,65 @@ func Test_GetTimeSeriesFailsOnUnspecifiedValueColumn(t *testing.T) {
 	err := tsm.GetTimeSeries("", &fromTo, nil, &ts)
 	if err == nil || !strings.HasPrefix(err.Error(), "malformed target") {
 		t.Fatalf(`Unexpected error querying missing table "%+v"`, err)
+	}
+}
+
+func Test_buildQuery(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+
+	query, valueColumn, tags := tsm.buildQuery("x", nil)
+	expectedQuery := "SELECT ts, x FROM tsTab WHERE ts >= ? AND ts < ? ORDER BY ts"
+	expectedValue := "x"
+	expectedTags := []string{}
+	if query != expectedQuery {
+		t.Fatalf(`Expected query "%s", but got "%s"`, expectedQuery, query)
+	}
+	if valueColumn != expectedValue {
+		t.Fatalf(`Expected value column "%s", but got "%s"`, expectedValue, valueColumn)
+	}
+	if len(tags) != 0 {
+		t.Fatalf(`Expected tags "%s", but got "%s"`, expectedTags, tags)
+	}
+}
+
+func Test_buildQueryTimeIntervalized(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+
+	// intervalize by hour, presuming a seconds time column
+	query, valueColumn, tags := tsm.buildQuery("x t(3600*(?/3600))", nil)
+	expectedQuery := "SELECT 3600*(ts/3600), x FROM tsTab WHERE ts >= ? AND ts < ? GROUP BY 3600*(ts/3600) ORDER BY 3600*(ts/3600)"
+	expectedValue := "x"
+	expectedTags := []string{}
+	if query != expectedQuery {
+		t.Fatalf(`Expected query "%s", but got "%s"`, expectedQuery, query)
+	}
+	if valueColumn != expectedValue {
+		t.Fatalf(`Expected value column "%s", but got "%s"`, expectedValue, valueColumn)
+	}
+	if len(tags) != 0 {
+		t.Fatalf(`Expected tags "%s", but got "%s"`, expectedTags, tags)
+	}
+}
+
+func Test_buildQuerySummarized(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+
+	// intervalize by hour, presuming a seconds time column
+	query, valueColumn, tags := tsm.buildQuery("count(x) t(3600*(ts/3600))", nil)
+	expectedQuery := "SELECT 3600*(ts/3600), count(x) FROM tsTab WHERE ts >= ? AND ts < ? GROUP BY 3600*(ts/3600) ORDER BY 3600*(ts/3600)"
+	expectedValue := "count(x)"
+	expectedTags := []string{}
+	if query != expectedQuery {
+		t.Fatalf(`Expected query "%s", but got "%s"`, expectedQuery, query)
+	}
+	if valueColumn != expectedValue {
+		t.Fatalf(`Expected value column "%s", but got "%s"`, expectedValue, valueColumn)
+	}
+	if len(tags) != 0 {
+		t.Fatalf(`Expected tags "%s", but got "%s"`, expectedTags, tags)
 	}
 }
 
