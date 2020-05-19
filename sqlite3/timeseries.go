@@ -3,8 +3,10 @@ package sqlite3
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"reflect"
 	"regexp"
+	"strconv"
 
 	"strings"
 	"time"
@@ -77,12 +79,26 @@ func (seriesMan *sqliteTimeSeriesManager) GetTimeSeries(target string, fromTo *Q
 			return err
 		}
 
+		toString := func(x interface{}) string {
+			switch v := x.(type) {
+			case *float64:
+				return strconv.FormatFloat(*v, 'f', 8, 64)
+			case *int64:
+				return strconv.FormatInt(*v, 10)
+			case *string:
+				return *v
+			default:
+				log.Panicf("Cannot cast %+v of type %s", x, v)
+				return ""
+			}
+		}
+
 		if len(tagColumns) > 0 {
 			var tagBuilder strings.Builder
-			tagBuilder.WriteString(*values[2].(*string)) // XXX cast can break server
+			tagBuilder.WriteString(toString(values[2]))
 			for _, i := range values[3:] {
 				tagBuilder.WriteString(" ")
-				tagBuilder.WriteString(*i.(*string))
+				tagBuilder.WriteString(toString(i))
 			}
 			tag = tagBuilder.String()
 		}

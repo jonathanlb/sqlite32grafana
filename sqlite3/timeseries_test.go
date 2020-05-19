@@ -123,7 +123,25 @@ func Test_GetTimeSeries(t *testing.T) {
 	}
 }
 
-/*
+func Test_GetTimeSeriesFloat(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+	var ts map[string][]DataPoint
+	fromTo := QueryRange{From: "0", To: "10"}
+	err := tsm.GetTimeSeries("f tag", &fromTo, nil, &ts)
+	if err != nil {
+		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
+	}
+	if ts == nil || len(ts) != 2 ||
+		len(ts["a"]) != 2 || len(ts["b"]) != 2 ||
+		ts["a"][0] != (DataPoint{Time: 1000, Value: 1.}) ||
+		ts["a"][1] != (DataPoint{Time: 3000, Value: 3.}) ||
+		ts["b"][0] != (DataPoint{Time: 2000, Value: 2.}) ||
+		ts["b"][1] != (DataPoint{Time: 4000, Value: 4.}) {
+		t.Fatalf(`Unexpected timeseries response "%+v"`, ts)
+	}
+}
+
 func Test_GetTimeSeriesWithIntTag(t *testing.T) {
 	db := createDbWithTable(t)
 	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
@@ -136,7 +154,21 @@ func Test_GetTimeSeriesWithIntTag(t *testing.T) {
 	if ts == nil || len(ts) != 4 {
 		t.Fatalf(`Unexpected timeseries response "%+v"`, ts)
 	}
-}*/
+}
+
+func Test_GetTimeSeriesWithFloatTag(t *testing.T) {
+	db := createDbWithTable(t)
+	tsm := sqliteTimeSeriesManager{db: db, table: "tsTab", timeColumn: "ts"}
+	var ts map[string][]DataPoint
+	fromTo := QueryRange{From: "0", To: "10"}
+	err := tsm.GetTimeSeries("x f", &fromTo, nil, &ts)
+	if err != nil {
+		t.Fatalf(`Unexpected error querying timeseries "%+v"`, err)
+	}
+	if ts == nil || len(ts) != 4 {
+		t.Fatalf(`Unexpected timeseries response "%+v"`, ts)
+	}
+}
 
 func Test_GetTimeSeriesLimit(t *testing.T) {
 	db := createDbWithTable(t)
@@ -382,12 +414,12 @@ func createDbWithTable(t *testing.T) *sql.DB {
 	}
 
 	queries := []string{
-		"CREATE TABLE tsTab (x INT, tag TEXT, ts INT, dt DATETIME)",
+		"CREATE TABLE tsTab (x INT, tag TEXT, ts INT, dt DATETIME, f REAL)",
 		"CREATE INDEX idx_tsTab_ts ON tsTab(ts)",
-		"INSERT INTO tsTab (ts, x, tag, dt) VALUES (1, 100, 'a', '2020-04-01')",
-		"INSERT INTO tsTab (ts, x, tag, dt) VALUES (2, 200, 'b', '2020-04-02')",
-		"INSERT INTO tsTab (ts, x, tag, dt) VALUES (3, 300, 'a', '2020-04-03')",
-		"INSERT INTO tsTab (ts, x, tag, dt) VALUES (4, 400, 'b', '2020-04-04')",
+		"INSERT INTO tsTab (ts, x, tag, dt, f) VALUES (1, 100, 'a', '2020-04-01', 1.0)",
+		"INSERT INTO tsTab (ts, x, tag, dt, f) VALUES (2, 200, 'b', '2020-04-02', 2.0)",
+		"INSERT INTO tsTab (ts, x, tag, dt, f) VALUES (3, 300, 'a', '2020-04-03', 3.0)",
+		"INSERT INTO tsTab (ts, x, tag, dt, f) VALUES (4, 400, 'b', '2020-04-04', 4.0)",
 	}
 	for _, q := range queries {
 		if _, err := db.Exec(q); err != nil {
