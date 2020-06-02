@@ -9,6 +9,7 @@ import (
 	"github.com/jonathanlb/sqlite32grafana/sqlite3"
 )
 
+// QueryPayload represents a query from Grafana for an exposed table.
 type QueryPayload struct {
 	Range         sqlite3.QueryRange
 	RangeRaw      sqlite3.QueryRangeRaw
@@ -20,11 +21,15 @@ type QueryPayload struct {
 	MaxDataPoints int32
 }
 
+// Timeseries holds a sequence of time-scalar pairs to send back to Grafana
+// in response to a query.
 type Timeseries struct {
 	Target     string      `json:"target"`
 	DataPoints [][]float64 `json:"datapoints"`
 }
 
+// InstallQuery establishes a ReST end point exposing a SQLite table for
+// querying.  Currently, only timeseries requests are supported.
 func InstallQuery(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesManager) {
 	endPoint := fmt.Sprintf("%s/%s/%s/query", route.DBAlias, route.Table, route.TimeColumn)
 	app.Post(endPoint, func(c *fiber.Ctx) {
@@ -48,7 +53,7 @@ func InstallQuery(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesM
 
 		result := []Timeseries{}
 		for _, target := range query.Targets {
-			// XXX switch on target.Type
+			// TODO switch on target.Type to support table-type queries.
 			var series map[string][]sqlite3.DataPoint
 			if err := tsm.GetTimeSeries(target.Target, &query.Range, &queryOpts, &series); err != nil {
 				send400(c, err)

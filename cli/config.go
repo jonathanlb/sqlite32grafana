@@ -8,6 +8,8 @@ import (
 	"go.uber.org/zap"
 )
 
+// RouteConfig stores SQLite table information to expose to ReST for
+// for simple-json-datasource access.
 type RouteConfig struct {
 	DBAlias    string
 	DBFile     string
@@ -15,6 +17,7 @@ type RouteConfig struct {
 	TimeColumn string
 }
 
+// Config stores application startup options.
 type Config struct {
 	Routes []RouteConfig
 	Port   int
@@ -33,6 +36,8 @@ func (i *arrayFlags) Set(value string) error {
 
 var logger *zap.Logger
 
+// Logger creates a zap sugared logger, using environment variables
+// for configuration.
 func Logger() *zap.SugaredLogger {
 	if logger == nil {
 		debugEnv := os.Getenv("DEBUG")
@@ -45,6 +50,7 @@ func Logger() *zap.SugaredLogger {
 	return logger.Sugar()
 }
 
+// Parse command-line arguments to configure the Sqlite to Grafana interface.
 func Parse(args []string) (Config, error) {
 	var config Config
 	fs := flag.NewFlagSet("sqlite2grafana", flag.ContinueOnError)

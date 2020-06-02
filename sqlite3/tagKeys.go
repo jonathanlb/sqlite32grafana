@@ -1,16 +1,14 @@
 package sqlite3
 
-import (
-	_ "github.com/mattn/go-sqlite3"
-)
-
-func (this *sqliteTimeSeriesManager) GetTagKeys(target string, dest *[]TagKey) error {
-	valueColumn, keyColumns := this.target2tokens(target)
-	if err := this.getSchema(this.table, dest); err != nil {
+// GetTagKeys returns the column names and and underlying types available
+// to label timeseries observations.
+func (tsm *sqliteTimeSeriesManager) GetTagKeys(target string, dest *[]TagKey) error {
+	valueColumn, keyColumns := tsm.target2tokens(target)
+	if err := tsm.getSchema(tsm.table, dest); err != nil {
 		return err
 	}
 	// remove the specified columns from the result
-	for _, col := range append(keyColumns, this.timeColumn, valueColumn) {
+	for _, col := range append(keyColumns, tsm.timeColumn, valueColumn) {
 		for idx, i := range *dest {
 			if col == i.Text {
 				n1 := len(*dest) - 1

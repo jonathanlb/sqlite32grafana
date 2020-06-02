@@ -7,6 +7,8 @@ import (
 	"github.com/jonathanlb/sqlite32grafana/cli"
 )
 
+// Test_TestConnection performs a dry run to demonstrate Grafana's ability to
+// check this datasource's liveness.
 func Test_TestConnection(t *testing.T) {
 	app := fiber.New(&fiber.Settings{})
 	route := cli.RouteConfig{DBAlias: "db", Table: "tab", TimeColumn: "t"}

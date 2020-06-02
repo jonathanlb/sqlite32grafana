@@ -8,6 +8,8 @@ import (
 	"github.com/jonathanlb/sqlite32grafana/sqlite3"
 )
 
+// InstallTagKeys sets up a ReST end point to publish columns available to label
+// timeseries values.
 func InstallTagKeys(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesManager) {
 	endPoint := fmt.Sprintf("%s/%s/%s/tag-keys", route.DBAlias, route.Table, route.TimeColumn)
 	app.Post(endPoint, func(c *fiber.Ctx) {

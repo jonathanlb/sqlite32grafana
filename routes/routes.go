@@ -10,6 +10,7 @@ import (
 
 var sugar = cli.Logger()
 
+// InstallAllRoutes sets up all ReST end points.
 func InstallAllRoutes(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesManager) {
 	InstallTestConnection(app, route)
 	InstallSearch(app, route, tsm)

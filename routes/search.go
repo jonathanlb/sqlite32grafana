@@ -14,8 +14,8 @@ type searchTarget struct {
 	Target string `json:"target"`
 }
 
-// Set up the search end point for simple-json-datasource.... which seems
-// to wire up column hints.... We will use tag-keys + time column for now.
+// InstallSearch sets up the search end point for simple-json-datasource to
+// wire up column hints. We will use tag-keys + time column for now.
 func InstallSearch(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeriesManager) {
 	endPoint := fmt.Sprintf("%s/%s/%s/search", route.DBAlias, route.Table, route.TimeColumn)
 	app.Post(endPoint, func(c *fiber.Ctx) {
@@ -23,13 +23,13 @@ func InstallSearch(app *fiber.App, route cli.RouteConfig, tsm sqlite3.TimeSeries
 		var target string
 
 		if len(c.Body()) > 0 {
-			var targetJson searchTarget
-			err := json.Unmarshal(body, &targetJson)
+			var targetJSON searchTarget
+			err := json.Unmarshal(body, &targetJSON)
 			if err != nil {
 				send400(c, err)
 				return
 			}
-			target = strings.ToLower(targetJson.Target)
+			target = strings.ToLower(targetJSON.Target)
 		} else {
 			target = ""
 		}
