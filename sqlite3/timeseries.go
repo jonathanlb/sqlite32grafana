@@ -134,7 +134,7 @@ func New(dbFileName string, table string, timeColumn string) (TimeSeriesManager,
 			}
 		}
 	}
-	return nil, errors.Wrap(err, fmt.Sprintf("cannot find time column %s in table with schema %+v", timeColumn, schema))
+	return nil, errors.Errorf("cannot find time column %s in table with schema %+v", timeColumn, schema)
 }
 
 func (seriesMan *sqliteTimeSeriesManager) buildQuery(target string, opts *TimeSeriesQueryOpts) (string, string, []string) {

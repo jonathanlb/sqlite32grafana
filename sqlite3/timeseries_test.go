@@ -270,7 +270,7 @@ func Test_GetTimeSeriesFailsOnUnspecifiedTimeColumn(t *testing.T) {
 	db.Close()
 
 	tsm, err := New(dbFileName, "tsTab", "")
-	if err != nil || tsm != nil {
+	if err == nil || tsm != nil {
 		t.Fatalf("Expected time series manager failure with missing time column.")
 	}
 }
